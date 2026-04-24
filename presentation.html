@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Churn Engine v1.0</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0f1117;
+      --surface: #1a1d27;
+      --border:  #2a2d3a;
+      --accent:  #6366f1;
+      --green:   #10b981;
+      --red:     #ef4444;
+      --warn:    #f59e0b;
+      --text:    #e2e8f0;
+      --muted:   #64748b;
+      --r:       12px;
+    }
+
+    html, body { height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+
+    /* ── SLIDESHOW ── */
+    .deck { width: 100vw; height: 100vh; position: relative; }
+
+    .slide {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      padding: 48px 72px;
+      opacity: 0; pointer-events: none;
+      transform: translateX(60px);
+      transition: opacity .35s ease, transform .35s ease;
+    }
+    .slide.active  { opacity: 1; pointer-events: auto; transform: translateX(0); }
+    .slide.exiting { opacity: 0; transform: translateX(-60px); }
+
+    .slide-inner { width: 100%; max-width: 1060px; }
+
+    /* ── NAV ── */
+    .nav {
+      position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 16px; z-index: 100;
+      background: rgba(26,29,39,.9); border: 1px solid var(--border);
+      border-radius: 99px; padding: 10px 20px; backdrop-filter: blur(8px);
+    }
+    .nav-btn {
+      width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text); cursor: pointer;
+      display: flex; align-items: center; justify-content: center; font-size: 14px;
+      transition: background .15s, border-color .15s;
+    }
+    .nav-btn:hover { background: var(--accent); border-color: var(--accent); }
+    .nav-btn:disabled { opacity: .3; cursor: default; }
+    .nav-counter { font-size: 13px; color: var(--muted); min-width: 48px; text-align: center; }
+    .nav-dots { display: flex; gap: 6px; align-items: center; }
+    .dot {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--border);
+      cursor: pointer; transition: background .2s, transform .2s;
+    }
+    .dot.active { background: var(--accent); transform: scale(1.4); }
+
+    /* ── SLIDE LABEL ── */
+    .slide-num {
+      font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 10px;
+    }
+
+    /* ── TYPOGRAPHY ── */
+    .tag {
+      display: inline-block; background: rgba(99,102,241,.15); border: 1px solid rgba(99,102,241,.4);
+      color: #a5b4fc; font-size: 12px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; padding: 4px 14px; border-radius: 99px; margin-bottom: 24px;
+    }
+    h1 { font-size: clamp(2.2rem, 5vw, 3.6rem); font-weight: 800; letter-spacing: -.03em; line-height: 1.1; margin-bottom: 16px; }
+    h1 span { color: #818cf8; }
+    h2 { font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 700; letter-spacing: -.02em; margin-bottom: 10px; }
+    .lead { font-size: 1.05rem; color: var(--muted); max-width: 640px; line-height: 1.7; }
+
+    /* ── PILLS ── */
+    .pills { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 28px; }
+    .pill { background: var(--surface); border: 1px solid var(--border); border-radius: 99px; padding: 6px 16px; font-size: 13px; color: #94a3b8; }
+    .pill strong { color: var(--text); }
+
+    /* ── GRID ── */
+    .grid { display: grid; gap: 14px; }
+    .g4 { grid-template-columns: repeat(4, 1fr); }
+    .g2 { grid-template-columns: repeat(2, 1fr); }
+    .g3 { grid-template-columns: repeat(3, 1fr); }
+
+    /* ── CARDS ── */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 22px; position: relative; }
+    .card.red  { border-color: rgba(239,68,68,.4);  background: rgba(239,68,68,.06); }
+    .card.blue { border-color: rgba(99,102,241,.5); background: rgba(99,102,241,.08); }
+    .card.green{ border-color: rgba(16,185,129,.4); background: rgba(16,185,129,.06); }
+    .card.warn { border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.06); }
+
+    .c-label { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+    .c-val   { font-size: 2.2rem; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+    .c-sub   { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+    .c-red   { color: var(--red); }
+    .c-blue  { color: #818cf8; }
+    .c-green { color: var(--green); }
+    .c-warn  { color: var(--warn); }
+
+    .badge {
+      position: absolute; top: 10px; right: 10px;
+      font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+      padding: 2px 8px; border-radius: 99px;
+    }
+    .badge.old { background: rgba(239,68,68,.2); color: #fca5a5; border: 1px solid rgba(239,68,68,.3); }
+    .badge.new { background: rgba(99,102,241,.2); color: #a5b4fc; border: 1px solid rgba(99,102,241,.3); }
+
+    /* ── BEFORE / AFTER SPLIT ── */
+    .ba {
+      display: grid; grid-template-columns: 1fr 56px 1fr;
+      border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;
+    }
+    .ba-side { padding: 28px 24px; }
+    .ba-left  { background: rgba(239,68,68,.06); }
+    .ba-right { background: rgba(99,102,241,.07); }
+    .ba-mid {
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface); border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+      font-size: 1.3rem; color: var(--muted); font-weight: 700;
+    }
+    .ba-badge {
+      display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; padding: 3px 10px; border-radius: 99px; margin-bottom: 12px;
+    }
+    .ba-badge.old { background: rgba(239,68,68,.2); color: #fca5a5; border: 1px solid rgba(239,68,68,.3); }
+    .ba-badge.new { background: rgba(99,102,241,.2); color: #a5b4fc; border: 1px solid rgba(99,102,241,.3); }
+    .ba-nums { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+    .ba-n { background: rgba(0,0,0,.25); border: 1px solid rgba(239,68,68,.2); border-radius: 8px; padding: 7px 12px; text-align: center; }
+    .ba-n .v { font-size: 1.3rem; font-weight: 800; color: #fca5a5; line-height: 1; }
+    .ba-n .l { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .ba-big { font-size: 3rem; font-weight: 800; color: #818cf8; letter-spacing: -.03em; line-height: 1; }
+    .checks { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
+    .checks span { font-size: 13px; }
+    .checks .y { color: var(--green); }
+    .checks .n { color: var(--red); }
+
+    /* ── TABLE ── */
+    .tbl-wrap { overflow-x: auto; border-radius: var(--r); border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th { background: var(--surface); padding: 11px 14px; text-align: left; font-weight: 600; white-space: nowrap; border-bottom: 2px solid var(--border); color: var(--muted); }
+    thead th.old { color: #fca5a5; background: rgba(239,68,68,.05); }
+    thead th.new { color: #a5b4fc; background: rgba(99,102,241,.1); border-bottom-color: rgba(99,102,241,.4); }
+    tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tbody td.old { background: rgba(239,68,68,.02); color: #94a3b8; }
+    tbody td.new { background: rgba(99,102,241,.06); color: #c7d2fe; font-weight: 500; border-left: 2px solid rgba(99,102,241,.3); }
+    tbody tr:last-child td { border-bottom: none; }
+    .t-y { color: var(--green); font-weight: 700; }
+    .t-n { color: var(--red); font-weight: 700; }
+    .t-w { color: var(--warn); font-weight: 700; }
+
+    /* ── CHART WRAP ── */
+    .chart-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 20px 20px 10px; }
+    .chart-box h3 { font-size: .9rem; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .chart-box .csub { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+    .chart-groups { display: flex; margin-top: 8px; font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+    .grp-old { flex: 4; text-align: center; color: #ef4444; padding: 5px 0; background: rgba(239,68,68,.06); border-radius: 6px 0 0 6px; border: 1px solid rgba(239,68,68,.2); }
+    .grp-new { flex: 1; text-align: center; color: #818cf8; padding: 5px 0; background: rgba(99,102,241,.1); border-radius: 0 6px 6px 0; border: 1px solid rgba(99,102,241,.3); border-left: none; }
+
+    /* ── FEATURES ── */
+    .features { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .feat { display: flex; gap: 14px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 18px; }
+    .feat-icon { width: 38px; height: 38px; border-radius: 10px; background: rgba(99,102,241,.12); border: 1px solid rgba(99,102,241,.2); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
+    .feat-title { font-weight: 600; font-size: .9rem; margin-bottom: 4px; }
+    .feat-body  { font-size: .82rem; color: var(--muted); line-height: 1.5; }
+
+    /* ── API BLOCK ── */
+    .api { background: #0a0c14; border: 1px solid var(--border); border-radius: var(--r); padding: 18px 22px; font-family: "Fira Code","Cascadia Code",monospace; font-size: 13px; line-height: 1.9; overflow-x: auto; }
+    .am { color: #34d399; font-weight: 700; }
+    .ap { color: #93c5fd; }
+    .ak { color: #fca5a5; }
+    .av { color: #fde68a; }
+    .ac { color: var(--muted); }
+
+    /* ── BIG STAT ROW ── */
+    .stat-row { display: flex; gap: 24px; align-items: flex-end; margin-bottom: 28px; }
+    .stat-big { font-size: 4.5rem; font-weight: 800; letter-spacing: -.04em; line-height: 1; }
+    .stat-label { font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
+    .stat-sub   { font-size: .85rem; color: var(--muted); }
+    .stat-sep   { width: 1px; height: 60px; background: var(--border); align-self: center; }
+
+    /* ── SLIDE 1: centered layout ── */
+    .slide-center { text-align: center; align-items: center; }
+    .slide-center .lead { margin: 0 auto; }
+  </style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+
+  <!-- ══════════════════════ SLIDE 1: TITLE -->
+  <div class="slide slide-center active" data-slide="0">
+    <div class="slide-inner" style="display:flex;flex-direction:column;align-items:center">
+      <div class="tag">SaaS Churn Engine — v1.0</div>
+      <h1>One metric.<br /><span>One definition.</span><br />One number.</h1>
+      <p class="lead">40 dashboards across three BI tools produced four different answers to the same question. This engine replaces them all.</p>
+      <div class="pills">
+        <div class="pill"><strong>Domain:</strong> SaaS / Subscription</div>
+        <div class="pill"><strong>Metric:</strong> Churn — logo &amp; revenue</div>
+        <div class="pill"><strong>Definition:</strong> v1.0</div>
+        <div class="pill"><strong>Tests:</strong> 31 passing</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 2: THE PROBLEM -->
+  <div class="slide" data-slide="1">
+    <div class="slide-inner">
+      <div class="slide-num">The problem</div>
+      <h2>Same quarter. Same data. Four different answers.</h2>
+      <p class="lead" style="margin-bottom:28px">Every team asked "what is our churn in 2024-Q1?" and got a different number — because nobody agreed on what churn means.</p>
+
+      <div class="grid g4">
+        <div class="card red">
+          <span class="badge old">Old</span>
+          <div class="c-label">Ops Manager</div>
+          <div class="c-val c-red">5.37%</div>
+          <div class="c-sub">Denominator = all customers ever, not just active at period start. Artificially dilutes the rate.</div>
+        </div>
+        <div class="card red">
+          <span class="badge old">Old</span>
+          <div class="c-label">Finance Director</div>
+          <div class="c-val c-red">5.90%</div>
+          <div class="c-sub">Revenue churn (MRR-based). Different metric type, compared directly against logo churn figures.</div>
+        </div>
+        <div class="card red">
+          <span class="badge old">Old</span>
+          <div class="c-label">Old Dashboard</div>
+          <div class="c-val c-red">7.23%</div>
+          <div class="c-sub">Correct denominator by accident — but undocumented, no version, no tests, no explanation.</div>
+        </div>
+        <div class="card red">
+          <span class="badge old">Old</span>
+          <div class="c-label">VP Estimate</div>
+          <div class="c-val c-red">18.12%</div>
+          <div class="c-sub">All-time cancellations ÷ all-time customers. Accumulates every churn event in company history.</div>
+        </div>
+      </div>
+
+      <div style="margin-top:20px;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);border-radius:var(--r);padding:14px 20px;display:flex;gap:32px;align-items:center">
+        <div><div style="font-size:.8rem;color:var(--muted)">Min answer</div><div style="font-size:1.6rem;font-weight:800;color:var(--red)">5.37%</div></div>
+        <div style="flex:1;height:6px;background:linear-gradient(90deg,var(--red),var(--warn));border-radius:3px"></div>
+        <div style="text-align:center"><div style="font-size:.8rem;color:var(--muted)">Spread</div><div style="font-size:1.6rem;font-weight:800;color:var(--warn)">3.4×</div></div>
+        <div style="flex:1;height:6px;background:linear-gradient(90deg,var(--warn),#ef4444);border-radius:3px"></div>
+        <div style="text-align:right"><div style="font-size:.8rem;color:var(--muted)">Max answer</div><div style="font-size:1.6rem;font-weight:800;color:var(--red)">18.12%</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 3: BEFORE / AFTER -->
+  <div class="slide" data-slide="2">
+    <div class="slide-inner">
+      <div class="slide-num">The solution</div>
+      <h2>Before vs. After</h2>
+      <p class="lead" style="margin-bottom:24px">One definition document, one versioned API, one number everyone can verify.</p>
+
+      <div class="ba">
+        <div class="ba-side ba-left">
+          <div class="ba-badge old">❌ Before — 4 conflicting answers</div>
+          <div style="font-size:.9rem;font-weight:600;margin-bottom:10px">2024-Q1 churn according to each team</div>
+          <div class="ba-nums">
+            <div class="ba-n"><div class="v">5.37%</div><div class="l">Ops</div></div>
+            <div class="ba-n"><div class="v">5.90%</div><div class="l">Finance</div></div>
+            <div class="ba-n"><div class="v">7.23%</div><div class="l">Dashboard</div></div>
+            <div class="ba-n"><div class="v">18.12%</div><div class="l">VP</div></div>
+          </div>
+          <div class="checks">
+            <span class="n">✗ No shared definition</span>
+            <span class="n">✗ No version history</span>
+            <span class="n">✗ Can't explain why a customer counts</span>
+            <span class="n">✗ 3.4× spread between min and max</span>
+          </div>
+        </div>
+
+        <div class="ba-mid">→</div>
+
+        <div class="ba-side ba-right">
+          <div class="ba-badge new">✅ After — Engine v1.0</div>
+          <div style="font-size:.9rem;font-weight:600;margin-bottom:10px">2024-Q1 logo churn</div>
+          <div class="ba-big">7.23%</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px">24 churned / 332 active · definition_version: v1.0</div>
+          <div class="checks" style="margin-top:14px">
+            <span class="y">✓ Explicit definition with boundary examples</span>
+            <span class="y">✓ Every result tagged with version</span>
+            <span class="y">✓ Explainable per customer via API</span>
+            <span class="y">✓ 31 automated tests</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 4: COMPARISON CHART -->
+  <div class="slide" data-slide="3">
+    <div class="slide-inner">
+      <div class="slide-num">Visual comparison</div>
+      <h2>Five definitions, one dataset, 2024-Q1</h2>
+      <p class="lead" style="margin-bottom:24px">Red bars = old conflicting methods. Blue bar = new engine. Same raw data in every case.</p>
+      <div class="chart-box">
+        <canvas id="compareChart" height="100"></canvas>
+        <div class="chart-groups" style="margin-top:8px">
+          <div class="grp-old">❌ Old — 4 conflicting methods</div>
+          <div class="grp-new">✅ New engine</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 5: NEW RESULTS -->
+  <div class="slide" data-slide="4">
+    <div class="slide-inner">
+      <div class="slide-num">New results — 2024 full year</div>
+      <h2>Eight quarters. One consistent definition.</h2>
+      <p class="lead" style="margin-bottom:24px">Every number produced by the same rules. Every number tagged with <code style="color:#a5b4fc">definition_version: v1.0</code>.</p>
+
+      <div class="grid g4" style="margin-bottom:20px">
+        <div class="card blue"><span class="badge new">New</span><div class="c-label">2024-Q1</div><div class="c-val c-blue">7.23%</div><div class="c-sub">24 churned / 332 active</div></div>
+        <div class="card green"><span class="badge new">New</span><div class="c-label">2024-Q2</div><div class="c-val c-green">4.10%</div><div class="c-sub">15 churned / 366 active</div></div>
+        <div class="card warn"><span class="badge new">New</span><div class="c-label">2024-Q3</div><div class="c-val c-warn">5.21%</div><div class="c-sub">21 churned / 403 active</div></div>
+        <div class="card warn"><span class="badge new">New</span><div class="c-label">2024-Q4</div><div class="c-val c-warn">5.76%</div><div class="c-sub">22 churned / 382 active</div></div>
+      </div>
+
+      <div class="chart-box">
+        <h3>Logo &amp; Revenue Churn — 8 quarters</h3>
+        <div class="csub" style="font-size:11px;color:var(--muted);margin-bottom:12px">Both metrics from the same engine and definition</div>
+        <canvas id="trendChart" height="80"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 6: RECONCILIATION -->
+  <div class="slide" data-slide="5">
+    <div class="slide-inner">
+      <div class="slide-num">The reconciliation</div>
+      <h2>Why the numbers differ — made explicit.</h2>
+      <p class="lead" style="margin-bottom:20px">Each row is an edge case that caused disagreement. The highlighted column is the new standard.</p>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:20%">Edge case</th>
+              <th class="old">Ops Manager</th>
+              <th class="old">Finance</th>
+              <th class="old">Old Dashboard</th>
+              <th class="old">VP Estimate</th>
+              <th class="new">✅ v1.0 Engine</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Denominator</strong></td>
+              <td class="old">All customers ever</td>
+              <td class="old">MRR of active-at-start</td>
+              <td class="old">Active at period start</td>
+              <td class="old">All customers ever</td>
+              <td class="new">Active at period start — <code>start_date ≤ period_start</code> AND <code>end_date &gt; period_start</code></td>
+            </tr>
+            <tr>
+              <td><strong>Starts &amp; churns same period</strong></td>
+              <td class="old t-n">Counted ↑</td>
+              <td class="old t-n">Counted ↑</td>
+              <td class="old t-y">Not counted</td>
+              <td class="old t-n">Counted ↑</td>
+              <td class="new">Not counted — never in denominator</td>
+            </tr>
+            <tr>
+              <td><strong>Downgrade (no cancel)</strong></td>
+              <td class="old">Ignored</td>
+              <td class="old t-w">Partial (MRR delta)</td>
+              <td class="old">Ignored</td>
+              <td class="old">Ignored</td>
+              <td class="new">Not logo churn; captured in revenue churn</td>
+            </tr>
+            <tr>
+              <td><strong><code>end_date</code> = <code>period_start</code></strong></td>
+              <td class="old t-n">Churned ↑</td>
+              <td class="old t-n">Churned ↑</td>
+              <td class="old t-n">Churned ↑</td>
+              <td class="old t-n">Churned ↑</td>
+              <td class="new">Not churned — was active at start</td>
+            </tr>
+            <tr>
+              <td><strong>Duplicate rows</strong></td>
+              <td class="old t-n">Inflates ↑</td>
+              <td class="old t-n">Inflates ↑</td>
+              <td class="old t-n">Inflates ↑</td>
+              <td class="old t-n">Inflates ↑</td>
+              <td class="new">Deduplicated by customer_id first</td>
+            </tr>
+            <tr>
+              <td><strong>Missing MRR</strong></td>
+              <td class="old">Ignored</td>
+              <td class="old">Excluded</td>
+              <td class="old t-w">Inconsistent</td>
+              <td class="old">Ignored</td>
+              <td class="new">Logo: counted. Revenue: excluded.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 7: WHY BETTER -->
+  <div class="slide" data-slide="6">
+    <div class="slide-inner">
+      <div class="slide-num">Why it's better</div>
+      <h2>Not just a number — a system.</h2>
+      <p class="lead" style="margin-bottom:28px">The old dashboards gave you a result. The engine gives you a result you can defend.</p>
+
+      <div class="features">
+        <div class="feat">
+          <div class="feat-icon">🏷️</div>
+          <div>
+            <div class="feat-title">Every result is versioned</div>
+            <div class="feat-body">Each response includes <code style="color:#a5b4fc">definition_version: v1.0</code>. Historical results stay tagged to the rules that produced them. No silent recalculations.</div>
+          </div>
+        </div>
+        <div class="feat">
+          <div class="feat-icon">🧪</div>
+          <div>
+            <div class="feat-title">Testable, not trusted</div>
+            <div class="feat-body">31 automated tests covering calculation logic and the HTTP layer. Edge cases are in the test suite, not in someone's head.</div>
+          </div>
+        </div>
+        <div class="feat">
+          <div class="feat-icon">💬</div>
+          <div>
+            <div class="feat-title">Explainable per customer</div>
+            <div class="feat-body">The <code style="color:#a5b4fc">/churn/explain</code> endpoint says in plain English exactly why a customer is (or isn't) counted. No more "the dashboard just shows it."</div>
+          </div>
+        </div>
+        <div class="feat">
+          <div class="feat-icon">📐</div>
+          <div>
+            <div class="feat-title">Definition is a first-class document</div>
+            <div class="feat-body">Every edge case lives in <code style="color:#a5b4fc">definition.md</code> with rationale. Changing logic means bumping the version — code and doc can't drift apart.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 8: API -->
+  <div class="slide" data-slide="7">
+    <div class="slide-inner">
+      <div class="slide-num">The engine — live API</div>
+      <h2>Ask the engine anything. Get a versioned answer.</h2>
+      <p class="lead" style="margin-bottom:24px">Three endpoints. Every response carries the definition that produced it.</p>
+
+      <div class="grid g2">
+        <div class="api">
+<span class="ac"># What is our churn this quarter?</span>
+
+<span class="am">GET</span> <span class="ap">/churn?period=2024-Q1</span>
+
+{
+  <span class="ak">"logo_churn_pct"</span>:     <span class="av">"7.23%"</span>,
+  <span class="ak">"revenue_churn_pct"</span>: <span class="av">"5.90%"</span>,
+  <span class="ak">"active_at_start"</span>:    <span class="av">332</span>,
+  <span class="ak">"churned_count"</span>:      <span class="av">24</span>,
+  <span class="ak">"definition_version"</span>: <span class="av">"v1.0"</span>
+}</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="api">
+<span class="ac"># Why does this customer count?</span>
+
+<span class="am">GET</span> <span class="ap">/churn/explain?customer_id=C0042&amp;period=2024-Q1</span>
+
+{
+  <span class="ak">"counted_as_churned"</span>: <span class="av">true</span>,
+  <span class="ak">"reason"</span>: <span class="av">"end_date=2024-02-15
+    falls within [2024-01-01,
+    2024-03-31] → churned."</span>,
+  <span class="ak">"definition_version"</span>: <span class="av">"v1.0"</span>
+}</div>
+          <div class="api">
+<span class="ac"># What rules produced this number?</span>
+
+<span class="am">GET</span> <span class="ap">/definitions</span>
+
+{
+  <span class="ak">"definition_version"</span>: <span class="av">"v1.0"</span>,
+  <span class="ak">"logo_churn_formula"</span>: <span class="av">"churned /
+    active_at_period_start"</span>,
+  <span class="ak">"edge_cases"</span>: <span class="av">[...]</span>
+}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /deck -->
+
+<!-- ── NAVIGATION -->
+<div class="nav">
+  <button class="nav-btn" id="btnPrev">&#8592;</button>
+  <div class="nav-dots" id="dots"></div>
+  <span class="nav-counter" id="counter">1 / 8</span>
+  <button class="nav-btn" id="btnNext">&#8594;</button>
+</div>
+
+<script>
+  Chart.register(ChartDataLabels);
+  Chart.defaults.color = '#64748b';
+  Chart.defaults.borderColor = '#2a2d3a';
+
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total  = slides.length;
+  let current  = 0;
+  let chartsInit = {};
+
+  const dotsEl   = document.getElementById('dots');
+  const counterEl = document.getElementById('counter');
+  const btnPrev  = document.getElementById('btnPrev');
+  const btnNext  = document.getElementById('btnNext');
+
+  // build dots
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' active' : '');
+    d.addEventListener('click', () => goTo(i));
+    dotsEl.appendChild(d);
+  });
+
+  function goTo(n, dir = 1) {
+    if (n < 0 || n >= total || n === current) return;
+    slides[current].classList.remove('active');
+    slides[current].classList.add('exiting');
+    const prev = current;
+    setTimeout(() => slides[prev].classList.remove('exiting'), 380);
+    current = n;
+    slides[current].classList.add('active');
+    dotsEl.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i === current));
+    counterEl.textContent = `${current + 1} / ${total}`;
+    btnPrev.disabled = current === 0;
+    btnNext.disabled = current === total - 1;
+    initChartsForSlide(current);
+  }
+
+  btnPrev.addEventListener('click', () => goTo(current - 1, -1));
+  btnNext.addEventListener('click', () => goTo(current + 1,  1));
+  btnPrev.disabled = true;
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown'  || e.key === ' ') { e.preventDefault(); goTo(current + 1); }
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')                      { e.preventDefault(); goTo(current - 1); }
+  });
+
+  // swipe support
+  let touchX = null;
+  document.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; });
+  document.addEventListener('touchend',   e => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 50) goTo(dx < 0 ? current + 1 : current - 1);
+    touchX = null;
+  });
+
+  function initChartsForSlide(n) {
+    if (chartsInit[n]) return;
+    chartsInit[n] = true;
+
+    if (n === 3) initCompareChart();
+    if (n === 4) initTrendChart();
+  }
+
+  function initCompareChart() {
+    new Chart(document.getElementById('compareChart'), {
+      type: 'bar',
+      plugins: [ChartDataLabels],
+      data: {
+        labels: ['Ops Manager', 'Finance', 'Old Dashboard', 'VP Estimate', 'v1.0 Engine'],
+        datasets: [{
+          data: [5.37, 5.90, 7.23, 18.12, 7.23],
+          backgroundColor: ['rgba(239,68,68,.55)','rgba(239,68,68,.45)','rgba(239,68,68,.45)','rgba(239,68,68,.7)','rgba(99,102,241,.75)'],
+          borderColor:      ['#ef4444','#ef4444','#ef4444','#ef4444','#6366f1'],
+          borderWidth: 2, borderRadius: 6,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y.toFixed(2)}%` } },
+          datalabels: {
+            anchor: 'end', align: 'end', offset: 2,
+            color: ctx => ctx.dataIndex === 4 ? '#a5b4fc' : '#fca5a5',
+            font: { weight: 'bold', size: 14 },
+            formatter: v => v.toFixed(2) + '%',
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 12 } } },
+          y: { grid: { color: '#1e2130' }, ticks: { color: '#64748b', callback: v => v + '%' }, min: 0, max: 24 }
+        }
+      }
+    });
+  }
+
+  function initTrendChart() {
+    new Chart(document.getElementById('trendChart'), {
+      type: 'line',
+      plugins: [ChartDataLabels],
+      data: {
+        labels: ['2023-Q1','2023-Q2','2023-Q3','2023-Q4','2024-Q1','2024-Q2','2024-Q3','2024-Q4'],
+        datasets: [
+          {
+            label: 'Logo churn %',
+            data: [5.99, 3.23, 4.04, 5.37, 7.23, 4.10, 5.21, 5.76],
+            borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,.08)',
+            borderWidth: 2.5, pointBackgroundColor: '#6366f1', pointRadius: 4, tension: 0.35, fill: true,
+          },
+          {
+            label: 'Revenue churn %',
+            data: [7.95, 2.53, 2.87, 7.02, 5.90, 3.44, 5.16, 6.84],
+            borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,.06)',
+            borderWidth: 2, pointBackgroundColor: '#10b981', pointRadius: 4,
+            tension: 0.35, fill: true, borderDash: [5, 4],
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { labels: { color: '#94a3b8', boxWidth: 12 } },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}%` } },
+          datalabels: { display: false }
+        },
+        scales: {
+          x: { grid: { color: '#1e2130' }, ticks: { color: '#64748b' } },
+          y: { grid: { color: '#1e2130' }, ticks: { color: '#64748b', callback: v => v + '%' }, min: 0, max: 12 }
+        }
+      }
+    });
+  }
+
+  // init slide 0 (no charts there)
+  initChartsForSlide(0);
+</script>
+</body>
+</html>
